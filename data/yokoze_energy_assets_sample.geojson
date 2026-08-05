@@ -1,0 +1,144 @@
+{
+  "type": "FeatureCollection",
+  "name": "yokoze_energy_assets_sample",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "shelter-yokoze-town-office",
+        "name": "横瀬町役場周辺",
+        "category": "public_facility",
+        "resource_type": "公共施設・防災拠点",
+        "owner_type": "public",
+        "supply": 2,
+        "islandable": 1,
+        "public_value": 5,
+        "usability": 3,
+        "safety": 4,
+        "readiness": "B",
+        "confidence": "medium",
+        "reason": "町の中心拠点として公共性が高い。実設備、非常時電源、運用条件は確認が必要。",
+        "next_check": "非常用発電機、蓄電池、停電時の優先負荷、避難所運用との接続"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [139.1009, 35.9871]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "facility-yokoze-school-area",
+        "name": "横瀬小学校・中学校周辺",
+        "category": "shelter",
+        "resource_type": "避難所候補・教育施設",
+        "owner_type": "public",
+        "supply": 2,
+        "islandable": 1,
+        "public_value": 5,
+        "usability": 3,
+        "safety": 3,
+        "readiness": "B",
+        "confidence": "low",
+        "reason": "避難所・地域拠点として重要。太陽光、蓄電池、給湯、給食設備の有無は未確認。",
+        "next_check": "指定避難所種別、屋根面、最低電力需要、給湯・調理需要"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [139.1062, 35.9885]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "facility-area898",
+        "name": "Area898周辺",
+        "category": "community",
+        "resource_type": "コミュニティ拠点",
+        "owner_type": "public_private",
+        "supply": 1,
+        "islandable": 1,
+        "public_value": 4,
+        "usability": 3,
+        "safety": 4,
+        "readiness": "C",
+        "confidence": "low",
+        "reason": "平常時の地域利用と情報発信拠点として可能性がある。エネルギー設備は調査が必要。",
+        "next_check": "コンセント容量、通信環境、蓄電池、災害時開放の可否"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [139.1018, 35.9877]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "energy-home-pv-battery-sample",
+        "name": "住宅太陽光＋蓄電池モデル",
+        "category": "private_der",
+        "resource_type": "分散型レジリエンス拠点",
+        "owner_type": "private",
+        "supply": 4,
+        "islandable": 4,
+        "public_value": 2,
+        "usability": 2,
+        "safety": 3,
+        "readiness": "B",
+        "confidence": "low",
+        "reason": "家庭の自立電源として強いが、近隣支援には所有者同意、外部給電、安全運用が必要。",
+        "next_check": "蓄電池容量、自立運転、屋外コンセント、地域協力意思、公開可否"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [139.0974, 35.9901]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "thermal-public-bath-sample",
+        "name": "太陽熱・給湯需要モデル",
+        "category": "thermal",
+        "resource_type": "熱エネルギー資源",
+        "owner_type": "unknown",
+        "supply": 3,
+        "islandable": 3,
+        "public_value": 3,
+        "usability": 3,
+        "safety": 3,
+        "readiness": "C",
+        "confidence": "low",
+        "reason": "電力ではなく熱需要を直接支えられる可能性。設置実態と貯湯容量は未調査。",
+        "next_check": "太陽熱温水器、貯湯タンク、給湯需要、冬季性能、災害時利用"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [139.094, 35.9819]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "microhydro-ashigakubo-sample",
+        "name": "芦ヶ久保 小水力候補モデル",
+        "category": "hydro",
+        "resource_type": "小水力候補",
+        "owner_type": "unknown",
+        "supply": 3,
+        "islandable": 3,
+        "public_value": 3,
+        "usability": 1,
+        "safety": 2,
+        "readiness": "C",
+        "confidence": "low",
+        "reason": "夜間も発電できる可能性があるが、流量、落差、水利権、災害リスクの確認が必要。",
+        "next_check": "流量、落差、取水条件、水利権、近接需要、土砂災害リスク"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [139.1355, 35.9764]
+      }
+    }
+  ]
+}

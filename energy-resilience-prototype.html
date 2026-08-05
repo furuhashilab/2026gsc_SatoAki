@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>横瀬町地域エネルギー資源マップ Prototype</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    #map { position: absolute; inset: 56px 384px 0 0; }
+    .panel { position: absolute; top: 56px; right: 0; bottom: 0; width: 384px; overflow: auto; }
+    .marker { width: 18px; height: 18px; border-radius: 999px; border: 2px solid white; box-shadow: 0 1px 6px rgba(15, 23, 42, .35); cursor: pointer; }
+    .marker.A { background: #15803d; }
+    .marker.B { background: #2563eb; }
+    .marker.C { background: #f59e0b; }
+    .marker.D { background: #b91c1c; }
+    .marker.unknown { background: #64748b; }
+    @media (max-width: 900px) {
+      #map { inset: 56px 0 42vh 0; }
+      .panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 42vh; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900">
+  <header class="h-14 bg-slate-950 text-white px-4 flex items-center justify-between shadow">
+    <div>
+      <h1 class="font-semibold leading-tight">横瀬町地域エネルギー資源マップ</h1>
+      <p class="text-xs text-slate-300">Prototype / 地域利用可能性 A-B-C-D 評価</p>
+    </div>
+    <a href="./index.html" class="text-xs bg-white/10 hover:bg-white/20 px-3 py-2 rounded">太陽光台帳へ</a>
+  </header>
+
+  <main>
+    <div id="map"></div>
+    <aside class="panel bg-white border-l border-slate-200">
+      <section class="p-4 border-b">
+        <h2 class="font-semibold">評価軸</h2>
+        <p class="mt-2 text-sm text-slate-600">発電量だけでなく、停電時に地域で使えるかを5軸で整理します。</p>
+        <button id="fetch-solar" class="mt-3 w-full rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">画面内のOSM太陽光を検索</button>
+        <div id="status" class="mt-2 hidden rounded px-3 py-2 text-xs"></div>
+        <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+          <label class="flex items-center gap-2"><input type="checkbox" data-layer="solar" checked> 太陽光ポリゴン</label>
+          <label class="flex items-center gap-2"><input type="checkbox" data-layer="assets" checked> 資源候補</label>
+          <label class="flex items-center gap-2"><input type="checkbox" data-layer="boundary" checked> 横瀬町境界</label>
+        </div>
+      </section>
+
+      <section class="p-4 border-b">
+        <div class="grid grid-cols-5 gap-2 text-center text-xs">
+          <div><div class="font-semibold text-green-700">A</div><div>即応性高</div></div>
+          <div><div class="font-semibold text-blue-700">B</div><div>協定で可</div></div>
+          <div><div class="font-semibold text-amber-600">C</div><div>設備追加</div></div>
+          <div><div class="font-semibold text-red-700">D</div><div>難しい</div></div>
+          <div><div class="font-semibold text-slate-600">?</div><div>未調査</div></div>
+        </div>
+      </section>
+
+      <section id="summary" class="p-4 border-b">
+        <h2 class="font-semibold">プロトタイプの狙い</h2>
+        <p class="mt-2 text-sm text-slate-600">横瀬町の太陽光、蓄電池、太陽熱、小水力、公共施設、避難所を「地域で使える資源か」という観点で可視化するための試作です。</p>
+        <div id="solar-summary" class="mt-3 grid grid-cols-2 gap-2 text-xs"></div>
+      </section>
+
+      <section id="detail" class="p-4">
+        <h2 class="font-semibold">地点を選択</h2>
+        <p class="mt-2 text-sm text-slate-600">地図上の丸いマーカーをクリックすると、評価理由と次に確認するデータが表示されます。</p>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    const scoreLabels = {
+      A: "すぐ地域資源化できる可能性が高い",
+      B: "協定・運用設計があれば使える",
+      C: "設備追加や詳細調査が必要",
+      D: "現状では地域利用が難しい"
+    };
+
+    const colors = {
+      A: "#15803d",
+      B: "#2563eb",
+      C: "#f59e0b",
+      D: "#b91c1c",
+      unknown: "#64748b"
+    };
+
+    const OVERPASS_ENDPOINTS = [
+      "https://overpass-api.de/api/interpreter",
+      "https://lz4.overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter"
+    ];
+
+    let fetchedSolarFeatures = [];
+
+    const map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: "raster",
+            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+            tileSize: 256,
+            attribution: "© OpenStreetMap contributors"
+          }
+        },
+        layers: [{ id: "osm", type: "raster", source: "osm" }]
+      },
+      center: [139.105, 35.985],
+      zoom: 12.3
+    });
+
+    map.addControl(new maplibregl.NavigationControl(), "bottom-left");
+
+    async function loadJson(path) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`${path}: ${res.status}`);
+      return res.json();
+    }
+
+    function showStatus(message, className) {
+      const status = document.getElementById("status");
+      status.className = `mt-2 rounded px-3 py-2 text-xs ${className}`;
+      status.textContent = message;
+      status.classList.remove("hidden");
+    }
+
+    async function fetchOverpassData(query) {
+      let lastErr = null;
+      for (const endpoint of OVERPASS_ENDPOINTS) {
+        try {
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+            body: `data=${encodeURIComponent(query)}`
+          });
+          if (res.ok) return res.json();
+          lastErr = new Error(`${endpoint}: ${res.status}`);
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr || new Error("Overpass API request failed");
+    }
+
+    function getMatchingSolarQueryTags(tags = {}) {
+      const matches = [];
+      if (tags.power === "generator" && tags["generator:source"] === "solar") matches.push("power=generator + generator:source=solar");
+      if (tags.power === "plant" && tags["plant:source"] === "solar") matches.push("power=plant + plant:source=solar");
+      if (tags.building === "solar_panels") matches.push("building=solar_panels");
+      if (tags.landuse === "solar_panel") matches.push("landuse=solar_panel");
+      return matches;
+    }
+
+    function formatOsmTags(tags = {}) {
+      return Object.entries(tags)
+        .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("; ");
+    }
+
+    function osmWaysToSolarGeoJSON(osmData) {
+      const features = [];
+      (osmData.elements || []).forEach((el) => {
+        if (el.type !== "way" || !Array.isArray(el.geometry)) return;
+        const coordinates = el.geometry.map((pt) => [pt.lon, pt.lat]);
+        if (coordinates.length < 3) return;
+        const first = coordinates[0];
+        const last = coordinates[coordinates.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) coordinates.push(first);
+
+        const poly = turf.polygon([coordinates]);
+        const areaM2 = turf.area(poly);
+        const capacityKW = areaM2 * 0.18;
+        const annualKWh = capacityKW * 1050;
+        const tags = el.tags || {};
+        poly.id = `way/${el.id}`;
+        poly.properties = {
+          id: `way/${el.id}`,
+          osm_type: el.type,
+          osm_id: el.id,
+          resource_type: "OSM太陽光",
+          calc_area_m2: Math.round(areaM2 * 100) / 100,
+          calc_capacity_kw: Math.round(capacityKW * 100) / 100,
+          calc_annual_kwh: Math.round(annualKWh * 100) / 100,
+          matched_query_tags: getMatchingSolarQueryTags(tags).join(" / ") || "検索条件タグ不明",
+          osm_tags: formatOsmTags(tags),
+          readiness: "C",
+          confidence: "medium"
+        };
+        features.push(poly);
+      });
+      return { type: "FeatureCollection", features };
+    }
+
+    function updateSolarSummary(features) {
+      const totalArea = features.reduce((sum, f) => sum + Number(f.properties.calc_area_m2 || 0), 0);
+      const totalCapacity = features.reduce((sum, f) => sum + Number(f.properties.calc_capacity_kw || 0), 0);
+      const totalAnnual = features.reduce((sum, f) => sum + Number(f.properties.calc_annual_kwh || 0), 0);
+      document.getElementById("solar-summary").innerHTML = `
+        <div class="rounded border bg-slate-50 p-2"><div class="text-slate-500">取得件数</div><div class="text-lg font-semibold">${features.length}</div></div>
+        <div class="rounded border bg-slate-50 p-2"><div class="text-slate-500">推計容量</div><div class="text-lg font-semibold">${Math.round(totalCapacity)} kW</div></div>
+        <div class="rounded border bg-slate-50 p-2"><div class="text-slate-500">面積</div><div class="text-lg font-semibold">${Math.round(totalArea).toLocaleString()} m²</div></div>
+        <div class="rounded border bg-slate-50 p-2"><div class="text-slate-500">年間発電量</div><div class="text-lg font-semibold">${Math.round(totalAnnual).toLocaleString()} kWh</div></div>
+      `;
+    }
+
+    async function fetchSolarInView() {
+      showStatus("Overpass APIから画面内の太陽光ポリゴンを取得中...", "bg-blue-50 text-blue-800");
+      const bounds = map.getBounds();
+      const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`;
+      const query = `
+        [out:json][timeout:25];
+        (
+          way["power"="generator"]["generator:source"="solar"](${bbox});
+          way["power"="plant"]["plant:source"="solar"](${bbox});
+          way["building"="solar_panels"](${bbox});
+          way["landuse"="solar_panel"](${bbox});
+          relation["power"="plant"]["plant:source"="solar"](${bbox});
+          relation["power"="generator"]["generator:source"="solar"](${bbox});
+        );
+        out body geom;
+      `;
+      try {
+        const osmData = await fetchOverpassData(query);
+        const solarGeoJSON = osmWaysToSolarGeoJSON(osmData);
+        fetchedSolarFeatures = solarGeoJSON.features;
+        map.getSource("solar").setData(solarGeoJSON);
+        updateSolarSummary(fetchedSolarFeatures);
+        showStatus(`${fetchedSolarFeatures.length}件のOSM太陽光ポリゴンを取得しました。`, "bg-emerald-50 text-emerald-800");
+      } catch (err) {
+        showStatus("取得に失敗しました。Overpass APIが混雑している可能性があります。", "bg-red-50 text-red-800");
+      }
+    }
+
+    function setDetail(props) {
+      const metrics = [
+        ["供給力", props.supply],
+        ["自立性", props.islandable],
+        ["公共性", props.public_value],
+        ["利用可能性", props.usability],
+        ["安全性", props.safety]
+      ];
+      document.getElementById("detail").innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="font-semibold">${props.name}</h2>
+            <p class="mt-1 text-xs text-slate-500">${props.resource_type} / ${props.owner_type}</p>
+          </div>
+          <div class="shrink-0 rounded px-2 py-1 text-sm font-bold text-white" style="background:${colors[props.readiness] || colors.unknown}">${props.readiness || "?"}</div>
+        </div>
+        <p class="mt-3 text-sm font-medium">${scoreLabels[props.readiness] || "情報不足"}</p>
+        <p class="mt-2 text-sm text-slate-600">${props.reason}</p>
+        <div class="mt-4 space-y-2">
+          ${metrics.map(([label, value]) => `
+            <div>
+              <div class="flex justify-between text-xs"><span>${label}</span><span>${value}/5</span></div>
+              <div class="h-2 bg-slate-100 rounded overflow-hidden"><div class="h-full bg-slate-700" style="width:${Number(value || 0) * 20}%"></div></div>
+            </div>
+          `).join("")}
+        </div>
+        <div class="mt-4 rounded bg-slate-50 border p-3">
+          <div class="text-xs font-semibold text-slate-700">データ確度</div>
+          <div class="mt-1 text-sm">${props.confidence}</div>
+          <div class="mt-3 text-xs font-semibold text-slate-700">次に確認すること</div>
+          <div class="mt-1 text-sm text-slate-600">${props.next_check}</div>
+        </div>
+      `;
+    }
+
+    function setSolarDetail(props) {
+      document.getElementById("detail").innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="font-semibold">${props.id}</h2>
+            <p class="mt-1 text-xs text-slate-500">${props.resource_type}</p>
+          </div>
+          <div class="shrink-0 rounded bg-amber-500 px-2 py-1 text-sm font-bold text-white">C</div>
+        </div>
+        <p class="mt-3 text-sm font-medium">設備追加や詳細調査が必要</p>
+        <p class="mt-2 text-sm text-slate-600">OSM上では太陽光設備として確認できます。ただし、蓄電池、自立運転、所有・契約形態、災害時利用の可否はOSMからは分かりません。</p>
+        <div class="mt-4 rounded bg-slate-50 border p-3 text-sm">
+          <div>面積: <b>${props.calc_area_m2} m²</b></div>
+          <div>推計容量: <b>${props.calc_capacity_kw} kW</b></div>
+          <div>年間想定発電量: <b>${props.calc_annual_kwh} kWh</b></div>
+          <div class="mt-2 text-xs text-slate-500">${props.matched_query_tags}</div>
+        </div>
+        <div class="mt-4 rounded bg-slate-50 border p-3">
+          <div class="text-xs font-semibold text-slate-700">次に確認すること</div>
+          <div class="mt-1 text-sm text-slate-600">蓄電池容量、自立運転可否、売電契約、所有者、地域協力意思、避難所・公共施設との接続可能性</div>
+        </div>
+      `;
+    }
+
+    map.on("load", async () => {
+      const [boundary, solar, assets] = await Promise.all([
+        loadJson("./data/yokoze_boundary.geojson"),
+        loadJson("./data/yokoze_solar_panels.geojson"),
+        loadJson("./data/yokoze_energy_assets_sample.geojson")
+      ]);
+
+      map.addSource("boundary", { type: "geojson", data: boundary });
+      map.addSource("solar", { type: "geojson", data: solar });
+
+      map.addLayer({
+        id: "boundary-fill",
+        type: "fill",
+        source: "boundary",
+        paint: { "fill-color": "#0f766e", "fill-opacity": 0.05 }
+      });
+
+      map.on("click", "solar-fill", (event) => {
+        const feature = event.features && event.features[0];
+        if (feature) setSolarDetail(feature.properties);
+      });
+      map.on("mouseenter", "solar-fill", () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", "solar-fill", () => { map.getCanvas().style.cursor = ""; });
+      map.addLayer({
+        id: "boundary-line",
+        type: "line",
+        source: "boundary",
+        paint: { "line-color": "#0f766e", "line-width": 2 }
+      });
+      map.addLayer({
+        id: "solar-fill",
+        type: "fill",
+        source: "solar",
+        paint: { "fill-color": "#facc15", "fill-opacity": 0.55 }
+      });
+      map.addLayer({
+        id: "solar-line",
+        type: "line",
+        source: "solar",
+        paint: { "line-color": "#a16207", "line-width": 1 }
+      });
+
+      assets.features.forEach((feature) => {
+        const props = feature.properties;
+        const marker = document.createElement("button");
+        marker.className = `marker ${props.readiness || "unknown"}`;
+        marker.title = props.name;
+        marker.addEventListener("click", () => setDetail(props));
+        new maplibregl.Marker({ element: marker })
+          .setLngLat(feature.geometry.coordinates)
+          .addTo(map);
+      });
+
+      document.querySelectorAll("[data-layer]").forEach((input) => {
+        input.addEventListener("change", (event) => {
+          const layer = event.target.dataset.layer;
+          const visible = event.target.checked ? "visible" : "none";
+          if (layer === "solar") ["solar-fill", "solar-line"].forEach((id) => map.setLayoutProperty(id, "visibility", visible));
+          if (layer === "boundary") ["boundary-fill", "boundary-line"].forEach((id) => map.setLayoutProperty(id, "visibility", visible));
+          if (layer === "assets") document.querySelectorAll(".marker").forEach((el) => { el.style.display = event.target.checked ? "block" : "none"; });
+        });
+      });
+
+      updateSolarSummary(solar.features || []);
+      document.getElementById("fetch-solar").addEventListener("click", fetchSolarInView);
+    });
+  </script>
+</body>
+</html>
