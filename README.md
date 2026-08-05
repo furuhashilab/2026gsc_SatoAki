@@ -174,18 +174,21 @@ data/yokoze_energy_assets_sample.geojson  今後の調査用サンプルデー�
 
 ## 参考文献
 
-参考文献は、今後GitHub Issueとして整理する。
+参考文献は、古橋研究室のルールに従い、APAスタイルを基本として整理する。文献・引用リストは今後GitHub Issueとして独立管理する。
 
-現時点で参照予定の資料は以下である。
+現時点で参照する資料は以下である。
 
-- 古橋研究室 卒論/ゼミ論ルール Issue #5
-- 横瀬町 第2次ちちぶ環境基本計画
-- 資源エネルギー庁 地域マイクログリッド関連資料
-- OpenStreetMap Wiki
-- Overpass API Documentation
-- 国土数値情報
-- 埼玉県 防災関連オープンデータ
-- NREL Energy Resilience / REopt関連資料
+- 古橋研究室. (2026). *卒論/ゼミ論ルール Issue #5*. GitHub. https://github.com/furuhashilab/README/issues/5
+- 横瀬町. (2025). *「第2次ちちぶ環境基本計画」を策定しました*. 横瀬町公式ホームページ. https://www.town.yokoze.saitama.jp/kurashi/kurashi-joho/55054
+- 横瀬町. (2025). *横瀬町太陽光発電施設の設置に関する要綱*. 横瀬町公式ホームページ. https://www.town.yokoze.saitama.jp/kurashi/kankyo/1106
+- 横瀬町. (2026). *横瀬町地球温暖化対策実行計画（事務事業編）《第4次計画》*. 横瀬町公式ホームページ. https://www.town.yokoze.saitama.jp/yokoze/about-yokoze/7903
+- OpenStreetMap contributors. (n.d.). *OpenStreetMap*. https://www.openstreetmap.org/
+- OpenStreetMap Wiki contributors. (n.d.). *Power*. OpenStreetMap Wiki. https://wiki.openstreetmap.org/wiki/Key:power
+- OpenStreetMap Wiki contributors. (n.d.). *Generator source*. OpenStreetMap Wiki. https://wiki.openstreetmap.org/wiki/Key:generator:source
+- Overpass API contributors. (n.d.). *Overpass API*. OpenStreetMap Wiki. https://wiki.openstreetmap.org/wiki/Overpass_API
+- 国土交通省国土政策局. (n.d.). *国土数値情報ダウンロードサイト*. https://nlftp.mlit.go.jp/ksj/
+- 資源エネルギー庁. (2024). *令和5年度エネルギーに関する年次報告（エネルギー白書2024）*. https://www.enecho.meti.go.jp/about/whitepaper/2024/
+- National Renewable Energy Laboratory. (n.d.). *Energy resilience*. https://www.nrel.gov/security-resilience/energy-resilience
 
 ## 使用したAI
 
