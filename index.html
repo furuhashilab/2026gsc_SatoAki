@@ -58,6 +58,26 @@
           </button>
         </div>
 
+        <!-- OSM電力インフラ表示レイヤー -->
+        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200 space-y-2">
+          <div class="text-xs font-bold text-slate-700">OSM電力インフラレイヤー</div>
+          <div class="grid grid-cols-2 gap-1.5 text-[11px] text-gray-700">
+            <label class="flex items-center gap-1.5 bg-white border rounded p-1.5 cursor-pointer">
+              <input type="checkbox" class="layer-toggle" data-layer-group="solar" checked> 太陽光
+            </label>
+            <label class="flex items-center gap-1.5 bg-white border rounded p-1.5 cursor-pointer">
+              <input type="checkbox" class="layer-toggle" data-layer-group="battery" checked> 蓄電池
+            </label>
+            <label class="flex items-center gap-1.5 bg-white border rounded p-1.5 cursor-pointer">
+              <input type="checkbox" class="layer-toggle" data-layer-group="line" checked> 送電線
+            </label>
+            <label class="flex items-center gap-1.5 bg-white border rounded p-1.5 cursor-pointer">
+              <input type="checkbox" class="layer-toggle" data-layer-group="substation" checked> 変電所
+            </label>
+          </div>
+          <p class="text-[10px] text-gray-500">表示対象はOSMクエリで取得できる既存地物のみです。太陽光の集計には太陽光ポリゴンだけを使います。</p>
+        </div>
+
         <!-- 選択モード切り替え -->
         <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200 space-y-2">
           <div class="text-xs font-bold text-slate-700">QGIS選択モード</div>
@@ -245,6 +265,7 @@
 
     let allFeatures = [];
     let currentFilteredFeatures = [];
+    let infrastructureFeatures = [];
     let activeMode = 'single';
     let popup = null;
     let activeBasemap = 'esri';
@@ -279,6 +300,45 @@
         matches.push('landuse=solar_panel');
       }
       return matches;
+    }
+
+    function classifyInfrastructure(tags = {}) {
+      if (tags.power === 'substation') return 'substation';
+      if (tags.power === 'storage' || tags['generator:method'] === 'battery' || tags.battery) return 'battery';
+      if (tags.power === 'line' || tags.power === 'minor_line' || tags.power === 'cable') return 'line';
+      return null;
+    }
+
+    function elementToFeature(el, category) {
+      const tags = el.tags || {};
+      const id = `${el.type}/${el.id}`;
+      const properties = {
+        id,
+        category,
+        power: tags.power || '',
+        voltage: tags.voltage || '',
+        operator: tags.operator || '',
+        name: tags.name || '',
+        osm_tags: formatOsmTags(tags) || 'タグなし'
+      };
+
+      if (el.type === 'node' && Number.isFinite(el.lon) && Number.isFinite(el.lat)) {
+        return turf.point([el.lon, el.lat], properties, { id });
+      }
+
+      if ((el.type === 'way' || el.type === 'relation') && Array.isArray(el.geometry)) {
+        const coordinates = el.geometry.map(pt => [pt.lon, pt.lat]);
+        if (coordinates.length < 2) return null;
+        const first = coordinates[0];
+        const last = coordinates[coordinates.length - 1];
+        const isClosed = coordinates.length >= 4 && first[0] === last[0] && first[1] === last[1];
+        if (isClosed && (category === 'substation' || category === 'battery')) {
+          return turf.polygon([coordinates], properties, { id });
+        }
+        return turf.lineString(coordinates, properties, { id });
+      }
+
+      return null;
     }
 
     function formatOsmTags(tags = {}) {
@@ -358,6 +418,9 @@
     document.querySelectorAll('.ranking-btn').forEach(btn => {
       btn.addEventListener('click', () => applyRanking(btn.dataset.rankingKey));
     });
+    document.querySelectorAll('.layer-toggle').forEach(input => {
+      input.addEventListener('change', syncLayerVisibility);
+    });
 
     document.getElementById('mode-single').addEventListener('click', () => setSelectionMode('single'));
     document.getElementById('mode-box').addEventListener('click', () => setSelectionMode('box'));
@@ -393,6 +456,7 @@
       map.setStyle(BASEMAPS[key].style);
       map.once('styledata', () => { 
         renderGeoJSONOnMap(); 
+        renderInfrastructureOnMap();
         renderDrawLayer(); 
         scheduleOamTiles();
       });
@@ -616,6 +680,20 @@
           way["landuse"="solar_panel"](${bbox});
           relation["power"="plant"]["plant:source"="solar"](${bbox});
           relation["power"="generator"]["generator:source"="solar"](${bbox});
+          node["power"="storage"](${bbox});
+          way["power"="storage"](${bbox});
+          relation["power"="storage"](${bbox});
+          node["generator:method"="battery"](${bbox});
+          way["generator:method"="battery"](${bbox});
+          relation["generator:method"="battery"](${bbox});
+          node["battery"](${bbox});
+          way["battery"](${bbox});
+          way["power"="line"](${bbox});
+          way["power"="minor_line"](${bbox});
+          way["power"="cable"](${bbox});
+          node["power"="substation"](${bbox});
+          way["power"="substation"](${bbox});
+          relation["power"="substation"](${bbox});
         );
         out body geom;
       `;
@@ -624,11 +702,18 @@
         const osmData = await fetchOverpassData(query);
         
         allFeatures = [];
+        infrastructureFeatures = [];
         activeRankingKey = null;
         updateRankingUI();
         (osmData.elements || []).forEach((el) => {
-          if (el.type === 'way' && Array.isArray(el.geometry)) {
-            const osmTags = el.tags || {};
+          const osmTags = el.tags || {};
+          const infraCategory = classifyInfrastructure(osmTags);
+          if (infraCategory) {
+            const infraFeature = elementToFeature(el, infraCategory);
+            if (infraFeature) infrastructureFeatures.push(infraFeature);
+          }
+
+          if (el.type === 'way' && Array.isArray(el.geometry) && getMatchingSolarQueryTags(osmTags).length > 0) {
             const matchedQueryTags = getMatchingSolarQueryTags(osmTags);
             const osmTagsText = formatOsmTags(osmTags);
             const coordinates = el.geometry.map(pt => [pt.lon, pt.lat]);
@@ -662,10 +747,15 @@
         if (allFeatures.length === 0) {
           showStatus('ℹ️ 画面内にソーラーパネル形状が見つかりませんでした。', 'bg-amber-100 text-amber-800');
         } else {
-          showStatus(`✅ 取得完了: ${allFeatures.length} 件のポリゴンを抽出しました。`, 'bg-emerald-100 text-emerald-800');
+          const counts = infrastructureFeatures.reduce((acc, f) => {
+            acc[f.properties.category] = (acc[f.properties.category] || 0) + 1;
+            return acc;
+          }, {});
+          showStatus(`✅ 取得完了: 太陽光 ${allFeatures.length} 件 / 蓄電池 ${counts.battery || 0} 件 / 送電線 ${counts.line || 0} 件 / 変電所 ${counts.substation || 0} 件`, 'bg-emerald-100 text-emerald-800');
         }
         
         renderGeoJSONOnMap();
+        renderInfrastructureOnMap();
         updateSummary(currentFilteredFeatures, "全体集計サマリー");
         renderTable(currentFilteredFeatures);
         enableExports();
@@ -686,14 +776,14 @@
           id: 'solar-fill',
           type: 'fill',
           source: 'solar-data',
-          paint: { 'fill-color': '#00f2ff', 'fill-opacity': 0.75 }
+          paint: { 'fill-color': '#facc15', 'fill-opacity': 0.72 }
         });
 
         map.addLayer({
           id: 'solar-line',
           type: 'line',
           source: 'solar-data',
-          paint: { 'line-color': '#0088ff', 'line-width': 2 }
+          paint: { 'line-color': '#a16207', 'line-width': 2 }
         });
 
         map.on('click', 'solar-fill', (e) => {
@@ -702,6 +792,147 @@
           }
         });
       }
+      syncLayerVisibility();
+    }
+
+    function renderInfrastructureOnMap() {
+      const geojson = { type: 'FeatureCollection', features: infrastructureFeatures };
+      if (map.getSource('power-infra-data')) {
+        map.getSource('power-infra-data').setData(geojson);
+      } else {
+        map.addSource('power-infra-data', { type: 'geojson', data: geojson });
+
+        map.addLayer({
+          id: 'power-line-layer',
+          type: 'line',
+          source: 'power-infra-data',
+          filter: ['==', ['get', 'category'], 'line'],
+          paint: {
+            'line-color': [
+              'match',
+              ['get', 'power'],
+              'line', '#ef4444',
+              'minor_line', '#f97316',
+              'cable', '#fb923c',
+              '#f97316'
+            ],
+            'line-width': [
+              'match',
+              ['get', 'power'],
+              'line', 3,
+              'minor_line', 1.8,
+              'cable', 1.5,
+              2
+            ],
+            'line-opacity': 0.9
+          }
+        });
+
+        map.addLayer({
+          id: 'substation-fill',
+          type: 'fill',
+          source: 'power-infra-data',
+          filter: ['all', ['==', ['get', 'category'], 'substation'], ['==', ['geometry-type'], 'Polygon']],
+          paint: { 'fill-color': '#8b5cf6', 'fill-opacity': 0.45 }
+        });
+
+        map.addLayer({
+          id: 'substation-line',
+          type: 'line',
+          source: 'power-infra-data',
+          filter: ['all', ['==', ['get', 'category'], 'substation'], ['==', ['geometry-type'], 'Polygon']],
+          paint: { 'line-color': '#6d28d9', 'line-width': 2 }
+        });
+
+        map.addLayer({
+          id: 'substation-point',
+          type: 'circle',
+          source: 'power-infra-data',
+          filter: ['all', ['==', ['get', 'category'], 'substation'], ['==', ['geometry-type'], 'Point']],
+          paint: {
+            'circle-radius': 7,
+            'circle-color': '#8b5cf6',
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 2
+          }
+        });
+
+        map.addLayer({
+          id: 'battery-fill',
+          type: 'fill',
+          source: 'power-infra-data',
+          filter: ['all', ['==', ['get', 'category'], 'battery'], ['==', ['geometry-type'], 'Polygon']],
+          paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.45 }
+        });
+
+        map.addLayer({
+          id: 'battery-line',
+          type: 'line',
+          source: 'power-infra-data',
+          filter: ['all', ['==', ['get', 'category'], 'battery'], ['==', ['geometry-type'], 'Polygon']],
+          paint: { 'line-color': '#1d4ed8', 'line-width': 2 }
+        });
+
+        map.addLayer({
+          id: 'battery-point',
+          type: 'circle',
+          source: 'power-infra-data',
+          filter: ['all', ['==', ['get', 'category'], 'battery'], ['==', ['geometry-type'], 'Point']],
+          paint: {
+            'circle-radius': 6,
+            'circle-color': '#2563eb',
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 2
+          }
+        });
+
+        ['power-line-layer', 'substation-fill', 'substation-line', 'substation-point', 'battery-fill', 'battery-line', 'battery-point'].forEach(layerId => {
+          map.on('click', layerId, (e) => {
+            if (e.features && e.features.length > 0) showInfrastructurePopup(e.features[0], e.lngLat);
+          });
+          map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+        });
+      }
+      syncLayerVisibility();
+    }
+
+    function showInfrastructurePopup(feature, lngLat) {
+      const p = feature.properties || {};
+      const label = p.category === 'line' ? '送電線・配電線' : p.category === 'substation' ? '変電所' : '蓄電池';
+      if (popup) popup.remove();
+      popup = new maplibregl.Popup()
+        .setLngLat(lngLat)
+        .setHTML(`
+          <div class="text-xs p-1 space-y-1">
+            <div class="font-bold text-slate-800">${escapeHtml(label)}: ${escapeHtml(p.id)}</div>
+            <div>name: <span class="font-mono">${escapeHtml(p.name || '--')}</span></div>
+            <div>power: <span class="font-mono">${escapeHtml(p.power || '--')}</span></div>
+            <div>voltage: <span class="font-mono">${escapeHtml(p.voltage || '--')}</span></div>
+            <div>operator: <span class="font-mono">${escapeHtml(p.operator || '--')}</span></div>
+            <div class="pt-1 border-t text-[11px] break-all">${escapeHtml(p.osm_tags || '--')}</div>
+          </div>
+        `)
+        .addTo(map);
+    }
+
+    function setLayerVisibility(layerIds, visible) {
+      layerIds.forEach(layerId => {
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+        }
+      });
+    }
+
+    function syncLayerVisibility() {
+      const isChecked = (group) => {
+        const input = document.querySelector(`.layer-toggle[data-layer-group="${group}"]`);
+        return !input || input.checked;
+      };
+      setLayerVisibility(['solar-fill', 'solar-line'], isChecked('solar'));
+      setLayerVisibility(['battery-fill', 'battery-line', 'battery-point'], isChecked('battery'));
+      setLayerVisibility(['power-line-layer'], isChecked('line'));
+      setLayerVisibility(['substation-fill', 'substation-line', 'substation-point'], isChecked('substation'));
     }
 
     function selectSingleFeature(feature, lngLat) {
