@@ -193,6 +193,6 @@ https://furuhashilab.github.io/2026gsc_SatoAki/
 
 ## License
 
-本研究の本文・成果物は、古橋研究室のルールに従い、原則として CC BY 4.0 で公開する。
+本研究の本文・成果物は、古橋研究室のルールに従い、[CC BY 4.0](LICENSE) で公開する。
 
 © Furuhashi Laboratory / Sato Aki, CC BY 4.0
