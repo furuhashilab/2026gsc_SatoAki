@@ -183,6 +183,19 @@
             <input id="oam-opacity" type="range" min="0" max="100" value="65" class="w-full accent-blue-600">
           </label>
         </div>
+        <div class="border-t pt-2 space-y-1.5 text-[11px]">
+          <div class="font-bold text-slate-800">🎨 色分け凡例</div>
+          <div class="grid grid-cols-2 gap-x-2 gap-y-1">
+            <div class="flex items-center gap-1.5"><span class="w-3 h-3 inline-block rounded-sm" style="background:#fde68a"></span>太陽光 小</div>
+            <div class="flex items-center gap-1.5"><span class="w-3 h-3 inline-block rounded-sm" style="background:#f59e0b"></span>太陽光 中</div>
+            <div class="flex items-center gap-1.5"><span class="w-3 h-3 inline-block rounded-sm" style="background:#dc2626"></span>太陽光 大</div>
+            <div class="flex items-center gap-1.5"><span class="w-3 h-3 inline-block rounded-sm" style="background:#7f1d1d"></span>太陽光 特大</div>
+            <div class="flex items-center gap-1.5"><span class="w-5 h-1 inline-block" style="background:#ef4444"></span>送電線</div>
+            <div class="flex items-center gap-1.5"><span class="w-5 h-1 inline-block" style="background:#f97316"></span>配電線</div>
+            <div class="flex items-center gap-1.5"><span class="w-3 h-3 inline-block rounded-full" style="background:#2563eb"></span>蓄電池</div>
+            <div class="flex items-center gap-1.5"><span class="w-3 h-3 inline-block rounded-sm" style="background:#8b5cf6"></span>変電所</div>
+          </div>
+        </div>
       </div>
 
       <div id="table-container" class="w-full bg-white border-t border-gray-300 flex flex-col overflow-hidden z-10" style="height: 35%;">
@@ -316,6 +329,9 @@
         id,
         category,
         power: tags.power || '',
+        generator_method: tags['generator:method'] || '',
+        battery: tags.battery || '',
+        substation: tags.substation || '',
         voltage: tags.voltage || '',
         operator: tags.operator || '',
         name: tags.name || '',
@@ -776,14 +792,35 @@
           id: 'solar-fill',
           type: 'fill',
           source: 'solar-data',
-          paint: { 'fill-color': '#facc15', 'fill-opacity': 0.72 }
+          paint: {
+            'fill-color': [
+              'step',
+              ['get', 'calc_capacity_kw'],
+              '#fde68a',
+              10, '#facc15',
+              50, '#f59e0b',
+              200, '#dc2626',
+              1000, '#7f1d1d'
+            ],
+            'fill-opacity': 0.74
+          }
         });
 
         map.addLayer({
           id: 'solar-line',
           type: 'line',
           source: 'solar-data',
-          paint: { 'line-color': '#a16207', 'line-width': 2 }
+          paint: {
+            'line-color': [
+              'step',
+              ['get', 'calc_capacity_kw'],
+              '#92400e',
+              50, '#b45309',
+              200, '#991b1b',
+              1000, '#450a0a'
+            ],
+            'line-width': 2
+          }
         });
 
         map.on('click', 'solar-fill', (e) => {
@@ -833,7 +870,17 @@
           type: 'fill',
           source: 'power-infra-data',
           filter: ['all', ['==', ['get', 'category'], 'substation'], ['==', ['geometry-type'], 'Polygon']],
-          paint: { 'fill-color': '#8b5cf6', 'fill-opacity': 0.45 }
+          paint: {
+            'fill-color': [
+              'match',
+              ['get', 'substation'],
+              'distribution', '#8b5cf6',
+              'minor_distribution', '#a78bfa',
+              'transmission', '#6d28d9',
+              '#c084fc'
+            ],
+            'fill-opacity': 0.48
+          }
         });
 
         map.addLayer({
@@ -851,7 +898,14 @@
           filter: ['all', ['==', ['get', 'category'], 'substation'], ['==', ['geometry-type'], 'Point']],
           paint: {
             'circle-radius': 7,
-            'circle-color': '#8b5cf6',
+            'circle-color': [
+              'match',
+              ['get', 'substation'],
+              'distribution', '#8b5cf6',
+              'minor_distribution', '#a78bfa',
+              'transmission', '#6d28d9',
+              '#c084fc'
+            ],
             'circle-stroke-color': '#ffffff',
             'circle-stroke-width': 2
           }
@@ -862,7 +916,15 @@
           type: 'fill',
           source: 'power-infra-data',
           filter: ['all', ['==', ['get', 'category'], 'battery'], ['==', ['geometry-type'], 'Polygon']],
-          paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.45 }
+          paint: {
+            'fill-color': [
+              'case',
+              ['==', ['get', 'power'], 'storage'], '#2563eb',
+              ['==', ['get', 'generator_method'], 'battery'], '#0ea5e9',
+              '#38bdf8'
+            ],
+            'fill-opacity': 0.5
+          }
         });
 
         map.addLayer({
@@ -880,7 +942,12 @@
           filter: ['all', ['==', ['get', 'category'], 'battery'], ['==', ['geometry-type'], 'Point']],
           paint: {
             'circle-radius': 6,
-            'circle-color': '#2563eb',
+            'circle-color': [
+              'case',
+              ['==', ['get', 'power'], 'storage'], '#2563eb',
+              ['==', ['get', 'generator_method'], 'battery'], '#0ea5e9',
+              '#38bdf8'
+            ],
             'circle-stroke-color': '#ffffff',
             'circle-stroke-width': 2
           }
@@ -908,6 +975,7 @@
             <div class="font-bold text-slate-800">${escapeHtml(label)}: ${escapeHtml(p.id)}</div>
             <div>name: <span class="font-mono">${escapeHtml(p.name || '--')}</span></div>
             <div>power: <span class="font-mono">${escapeHtml(p.power || '--')}</span></div>
+            <div>substation: <span class="font-mono">${escapeHtml(p.substation || '--')}</span></div>
             <div>voltage: <span class="font-mono">${escapeHtml(p.voltage || '--')}</span></div>
             <div>operator: <span class="font-mono">${escapeHtml(p.operator || '--')}</span></div>
             <div class="pt-1 border-t text-[11px] break-all">${escapeHtml(p.osm_tags || '--')}</div>
