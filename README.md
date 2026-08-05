@@ -2,7 +2,7 @@
 
 青山学院大学 地球社会共生学部 古橋研究室  
 2026年度 卒業論文 / 構想発表  
-佐藤亜紀
+佐藤愛妃
 
 - [公開Webアプリ](https://furuhashilab.github.io/2026gsc_SatoAki/)
 - [GitHubリポジトリ](https://github.com/furuhashilab/2026gsc_SatoAki)
